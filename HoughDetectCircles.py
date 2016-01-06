@@ -9,6 +9,11 @@ class Points:
     def __init__(self,v1,v2):
         self.x = v1
         self.y = v2
+    def compare(self,pt):
+        if self.x == pt.x and self.y == pt.y:
+            return True
+        return False
+    
 
 class houghTransform:
     
@@ -21,8 +26,7 @@ class houghTransform:
         self.thinningEdges();
         self.applyThreshold();
         self.collectEdgePts()
-        self.circleDetect();
-        #self.bonusDetectCntr();
+        self.randomCoinDetect();
         self.showNSaveImage();
             
     def preprocess(self):
@@ -50,9 +54,8 @@ class houghTransform:
         return math.sqrt(math.pow(pt.x-cntr.x,2)+math.pow(pt.y-cntr.y,2))
 
         
-    def streCirclePts(self, pt, index):
-        self.circlePts.append(Points(pt[index].x,pt[index].y))
-        del pt[index]
+    def streCirclePts(self,  point):
+        self.circlePts.append(point)
         
     def putBackAll(self):
         for i in range(np.shape(self.circlePts)[0]):
@@ -63,7 +66,7 @@ class houghTransform:
         self.edgePts.append(Points(self.circlePts[index].x,self.circlePts[index].y))
         del self.circlePts[index]
     
-    def assignCoord(self,pts):
+    def assignCoord(self,pts, x , y, boxSz):
         notFull = 1
         thresd = 10
         thresA = 30
@@ -72,18 +75,23 @@ class houghTransform:
         cntr = Points(0,0)
         r = 0
         while notFull:
-            if i > 20:
-                i = 1
+            if i > 100:
+                break
+            i = i + 1
             self.circlePts = []
-            inp = np.shape(pts)[0]/2
-            index1 = random.randrange(1,inp)
-            index2 = random.randrange(1,inp)
-            index3 = random.randrange(1,inp)
-            if index1 == index2 or index1 == index3 or index2 == index3:
+            indexi1 = random.randrange(1,x+boxSz)
+            indexi2 = random.randrange(1,x+boxSz)
+            indexi3 = random.randrange(1,x+boxSz)
+            indexj1 = random.randrange(1,y+boxSz)
+            indexj2 = random.randrange(1,y+boxSz)
+            indexj3 = random.randrange(1,y+boxSz)
+            if ( indexi1 == indexi2 and  indexj1 == indexj2 ) or ( indexi1 == indexi3 and indexj1 == indexj3 ) or ( indexi2 == indexi3 and indexj2 == indexj3):
                 continue
-            self.streCirclePts(pts,index1)
-            self.streCirclePts(pts,index2)
-            self.streCirclePts(pts,index3)
+            if ( pts[indexi1,indexj1] == 0 or pts[indexi2,indexj2] == 0 or pts[indexi3,indexj3] == 0 ):
+                continue
+            self.streCirclePts(pts,Points(indexi1,indexj1))
+            self.streCirclePts(pts,Points(indexi2,indexj2))
+            self.streCirclePts(pts,Points(indexi3,indexj3))
             d2 = self.calcRadii(self.circlePts[0],self.circlePts[1])
             d3 = self.calcRadii(self.circlePts[2],self.circlePts[0])
             d31 = self.calcRadii(self.circlePts[2],self.circlePts[1])
@@ -93,7 +101,6 @@ class houghTransform:
             cntr = self.findCentr(self.circlePts)
             r = self.calcRadii(self.circlePts[0],cntr)
             if (r > 53 or r < 30 or d2 < thresA or d2 > thresB) or (d3 < thresA or d3 > thresB) or (d31 < thresA or d31 > thresB):
-                self.putBackAll()
                 continue
                 
             notFull = 0
@@ -120,47 +127,52 @@ class houghTransform:
         forth = math.pow(pt3.x,2)+math.pow(pt3.y,2)-math.pow(pt1.x+pt1.y,2)
         b = ((first*forth)-(second*third))/denominator
         
-        cntr = Points(0,0)
-        cntr.x = a
-        cntr.y = b
+        cntr = Points(a,b)
         return cntr
         
     
     def colctptsCircle(self,cntr,r,listSz):
         thresd = 3
         Np = 0
-        i = 0
-        while 1:
-            if  i >= np.shape(self.edgePts)[0]-1:
-                break
-            d = self.calcRadii(self.edgePts[i],cntr)
-            if d - r < thresd:
-                self.streCirclePts(self.edgePts,i)
-                Np = Np + 1
-            i = i + 1
+        for rad in range(r - thresd,r + thresd):
+                for theta in range(0,360,5):
+                    a = round(cntr.x+rad*math.cos(theta));
+                    b = round(cntr.y+rad*math.sin(theta));
+                    if(self.checkBoundary(a,b)):
+                        continue;
+                    if(self.gradHori[a,b] > 46):
+                        Np = Np + 1
         return Np
             
     def markCntrPt(self,cntr,r):
         self.cntrPts.append([cntr.x,cntr.y,r])
         self.copyCircletoOrig()
     
-    def bonusDetectCntr(self):
+    def randomCoinDetect(self):
         thresR = 0.4
         thresMin = 10 ## minimum number of points left in edge vector when to stop detecting circle
         self.cntrPts = []
-        while np.shape(self.edgePts)[0] > thresMin:
-            [cntr,r] = self.assignCoord(self.edgePts)
-            print "aa gaya bahar"
-            listSz = np.shape(self.edgePts)[0]
-            Np = self.colctptsCircle(cntr,r,listSz)
-            if Np>= 2*3.14*r*thresR:
-                print r
-                self.markCntrPt(cntr,r)
-                del self.circlePts
-                print "found circle"
-                break
-            else:
-                self.putBackAll()
+        i = 0
+        j = 0
+        [w,h] = np.shape(self.gradHori)
+        boxSz = 60
+        while j + boxSz < h:
+            i = 0
+            j = j + 1
+            while i + boxSz < w:
+                [cntr,r] = self.assignCoord(self.gradHori, i , j, boxSz)
+                if cntr.compare(Points(0,0)):
+                    continue
+                print "aa gaya bahar"
+                listSz = np.shape(self.edgePts)[0]
+                Np = self.colctptsCircle(cntr,r,listSz)
+                if Np>= 2*3.14*r*thresR:
+                    print r
+                    self.markCntrPt(cntr,r)
+                    print "found circle"
+                    break
+                i = i + 1
+            
 
     def copyCircletoOrig(self):
         self.HoughDetectCircles = cv2.imread(self.filename)  
@@ -189,45 +201,6 @@ class houghTransform:
                 
         self.numOfEdge = np.shape(self.edgePts)[0]
         
-    def circleDetect(self):
-        ## for hough circle finding
-        self.accumulator  = np.zeros((self.width,self.height));
-        self.minR = self.minimmRadii
-        self.maxR = self.minR + 3
-        self.intenThres = 46
-        self.cntrPts = []
-        while self.maxR <= self.maximmRadii:
-            self.countIntrsct = np.zeros((self.width, self.height,self.maxR));
-            self.findCircles();
-            self.storeCentrs();
-            self.minR = self.maxR + 1
-            self.maxR = self.minR + 3
-            self.intenThres = self.intenThres + 1
-        self.copyCircletoOrig()
-     
-## errorrng = 20 at intensity > 53
-## 34 to 37 
-## 38 to 41
-## 42 to 45
-## 46 to 49 
-## 50 to 53 
-    def findCircles(self):
-        minR = self.minR;
-        maxR = self.maxR;
-        [width, height] = [self.width,self.height]
-           
-        for i in range(self.numOfEdge):
-            x = self.edgePts[i].x
-            y = self.edgePts[i].y
-            for r in range(minR,maxR):
-                r = (r - minR)/5+minR
-                
-                for theta in range(0,360,5):
-                    a = round(x+r*math.cos(theta));
-                    b = round(y+r*math.sin(theta));
-                    if(self.checkBoundary(a,b)):
-                        continue;
-                    self.countIntrsct[a,b,r] = self.countIntrsct[a,b,r] + 1;
                             
     def checkBoundary(self,x,y):
         return ( x < 0 or y < 0 or x >= self.width or y >= self.height)
